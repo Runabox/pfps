@@ -1,0 +1,4 @@
+# Sensitive configuration
+
+appsettings.Development.json
+appsettings.json
