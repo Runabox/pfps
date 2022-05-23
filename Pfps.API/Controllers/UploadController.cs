@@ -63,31 +63,25 @@ namespace Pfps.API.Controllers
             [FromForm] string description, [FromForm] IFormFileCollection upload)
         {
             if (title.Length > 48)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = "Title cannot be over 48 characters."
                 });
-            }
 
             if (description != null && description.Length > 128)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = "Description cannot be over 128 characters."
                 });
-            }
 
             if (upload.ToArray().Length <= 0)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = "No files provided.",
                 });
-            }
 
             if (type >= 3)
                 return BadRequest(new
@@ -96,63 +90,44 @@ namespace Pfps.API.Controllers
                     error = "Invalid Upload Type"
                 });
 
-            _log.LogInformation("Array Length: {length}", upload.ToArray().Length);
             if (upload.ToArray().Length == 2 && ((UploadType)type == UploadType.PFP_SINGLE || (UploadType)type == UploadType.PFP_MULTIPLE))
-            {
-                var typeString = ParseUploadTypeInt((UploadType)type);
-
                 return BadRequest(new
                 {
                     code = 400,
-                    error = $"Incorrect upload type (provided {typeString}, expected PFP_MATCHING)",
+                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_MATCHING)",
                 });
-            }
             else if (upload.ToArray().Length == 1 && ((UploadType)type == UploadType.PFP_MULTIPLE || (UploadType)type == UploadType.PFP_MATCHING))
-            {
-                var typeString = ParseUploadTypeInt((UploadType)type);
-
                 return BadRequest(new
                 {
                     code = 400,
-                    error = $"Incorrect upload type (provided {typeString}, expected PFP_SINGLE)",
+                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_SINGLE)",
                 });
-            }
             else if (upload.ToArray().Length > 2 && ((UploadType)type == UploadType.PFP_SINGLE || (UploadType)type == UploadType.PFP_MATCHING))
-            {
-                var typeString = ParseUploadTypeInt((UploadType)type);
-
                 return BadRequest(new
                 {
                     code = 400,
-                    error = $"Incorrect upload type (provided {typeString}, expected PFP_MULTIPLE)",
+                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_MULTIPLE)",
                 });
-            }
             else if (upload.ToArray().Length > 8)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = $"You can only upload 8 profile pictures per post! (provided {upload.ToArray().Length})",
                 });
-            }
 
             if ((UploadType)type == UploadType.PFP_MULTIPLE)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = "PFP_MULTIPLE is not supported yet.",
                 });
-            }
 
             if (title == null)
-            {
                 return BadRequest(new
                 {
                     code = 400,
                     error = "Malformed request body",
                 });
-            }
 
             // create tags
             string[] tagStringArray = tags.Split(',');
@@ -192,13 +167,8 @@ namespace Pfps.API.Controllers
 
             ICollection<IFormFile> badFiles = new Collection<IFormFile>();
             foreach (var file in upload)
-            {
-                var disposition = ParseFileExtension(file);
-                if (!ValidateDisposition(disposition))
-                {
+                if (!ValidateDisposition(ParseFileExtension(file)))
                     badFiles.Add(file);
-                }
-            }
 
             if (badFiles.ToArray().Length >= 1)
             {
