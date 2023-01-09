@@ -28,9 +28,8 @@ namespace Pfps.API.Controllers
             if (!await _ctx.Tags.AnyAsync(x => x.Name == id))
                 return NotFound();
 
-            var count = await _ctx.Uploads
+            var count = await _ctx.ApprovedUploads
                 .AsNoTracking()
-                .Where(x => x.IsApproved == true)
                 .Where(x => x.Tags.Contains(id))
                 .CountAsync();
 
