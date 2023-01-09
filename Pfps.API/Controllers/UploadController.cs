@@ -22,39 +22,25 @@ namespace Pfps.API.Controllers
         }
 
         [HttpGet("/api/v1/uploads/orderby")]
-        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] int type, [FromQuery] int uploadType, [FromQuery] int page = 0, [FromQuery] int limit = 20)
+        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] OrderType type, [FromQuery] UploadType uploadType, [FromQuery] int page = 0, [FromQuery] int limit = 20)
         {
-            var typeEnum = (OrderType)type;
-            switch (typeEnum)
-            {
-                case OrderType.DESCENDING:
-                    return Ok(await _ctx.Uploads
-                        .Where(x => x.IsApproved == true)
-                        .Where(x => ((int)x.Type) == uploadType)
-                        .Include(x => x.Uploader)
-                        .OrderByDescending(x => x.Timestamp)
-                        .Skip(page * limit)
-                        .Take(limit)
-                        .Select(x => UploadSimplifiedViewModel.From(x))
-                        .ToListAsync());
-                case OrderType.POPULAR:
-                    return Ok(await _ctx.Uploads
-                        .Where(x => x.IsApproved == true)
-                        .Where(x => ((int)x.Type) == uploadType)
-                        .Include(x => x.Uploader)
-                        .OrderByDescending(x => x.Views)
-                        .Skip(page * limit)
-                        .Take(limit)
-                        .Select(x => UploadSimplifiedViewModel.From(x))
-                        .ToListAsync());
-                default:
-                    return BadRequest(new
-                    {
-                        code = 400,
-                        error = $"Unknown OrderType (provided {this.ParseOrderTypeInt((OrderType)type)})",
-                    });
-            }
+            var query = _ctx.ApprovedUploads
+                .Where(x => x.Type == uploadType)
+                .Include(x => x.Uploader)
+                .OrderByDescending(x => x.Timestamp);
+
+            if (type == OrderType.POPULAR)
+                query = query.OrderByDescending(x => x.Views);
+
+            var uploads = await query
+                .Skip(page * limit)
+                .Take(limit)
+                .Select(x => UploadSimplifiedViewModel.From(x))
+                .ToListAsync();
+
+            return Ok(uploads);
         }
+
 
         [HttpPost("/api/v1/upload")]
         [ReCaptchaValidation]

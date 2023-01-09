@@ -12,5 +12,7 @@ namespace Pfps.API.Data
         public DbSet<Audit> Audits { get; set; }
         public DbSet<Favorite> Favorites { get; set; }
         public DbSet<Notification> Notifications { get; set; }
+
+        public IQueryable<Upload> ApprovedUploads => this.Uploads.Where(x => x.IsApproved);
     }
 }

@@ -56,7 +56,7 @@ namespace Pfps.API.Services
 
     public class OAuth2TokenResult
     {
-        public string Access_Token { get; set; }
+        public string Access_Token { get; set; } // I FUCKING HATE THIS
         public int Expires_In { get; set; }
         public string Refresh_Token { get; set; }
         public string Scope { get; set; }

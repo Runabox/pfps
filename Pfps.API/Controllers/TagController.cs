@@ -19,7 +19,7 @@ namespace Pfps.API.Controllers
         [HttpGet("/api/v1/tags/{id}")]
         public async Task<IActionResult> GetTagAsync(Guid id)
         {
-            var tag = await _ctx.Tags.FirstOrDefaultAsync(x => x.Id == id);
+            var tag = await _ctx.Tags.FindAsync(id);
 
             if (tag == null)
                 return NotFound();
@@ -41,7 +41,7 @@ namespace Pfps.API.Controllers
                 .Where(x => x.IsApproved == true)
                 .Where(x => x.TagIds.Contains(tag.Id))
                 .Select(x => UploadSimplifiedViewModel.From(x))
-                .ToListAsync();
+                .ToListAsync(); //inefficient code
 
             if (count == true)
             {
@@ -54,7 +54,7 @@ namespace Pfps.API.Controllers
             return Ok(new
             {
                 uses = uploads.ToArray().Length,
-                uploads,
+                uploads, // this returns everything, so should be changed
             });
         }
     }
