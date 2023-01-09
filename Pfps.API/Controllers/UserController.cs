@@ -70,7 +70,7 @@ namespace Pfps.API.Controllers
         public async Task<IActionResult> LoginUserAsync([FromBody] ApiUserModel model)
         {
             var user = await _ctx.Users.FirstOrDefaultAsync(x => x.Email == model.Email);
-            if (user != null && user.DiscordUser == true)
+            if (user != null && user.HasLinkedDiscord == true)
             {
                 return BadRequest(new
                 {
@@ -120,9 +120,9 @@ namespace Pfps.API.Controllers
                 });
             }
 
-            if (await _ctx.Users.AnyAsync(x => x.Password == discordUser.Id && x.DiscordUser == true))
+            if (await _ctx.Users.AnyAsync(x => x.Password == discordUser.Id && x.HasLinkedDiscord == true))
             {
-                var usr = await _ctx.Users.FirstOrDefaultAsync(x => x.Password == discordUser.Id && x.DiscordUser == true);
+                var usr = await _ctx.Users.FirstOrDefaultAsync(x => x.Password == discordUser.Id && x.HasLinkedDiscord == true);
                 return Ok(new
                 {
                     token = usr.Token,
@@ -134,7 +134,7 @@ namespace Pfps.API.Controllers
                 Username = discordUser.Username,
                 Password = discordUser.Id,
                 Email = discordUser.Email,
-                DiscordUser = true,
+                HasLinkedDiscord = true,
             };
 
             await _ctx.Users.AddAsync(user);
@@ -217,7 +217,7 @@ namespace Pfps.API.Controllers
         [PfpsAuthorized]
         public async Task<IActionResult> GiveSelfAdminAsync()
         {
-            base.PfpsUser.Flags = Flags.ADMINISTRATOR;
+            base.PfpsUser.Flags = UserFlags.Administrator;
             await _ctx.SaveChangesAsync();
 
             return NoContent();

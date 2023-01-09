@@ -8,21 +8,21 @@ namespace Pfps.Filters
 {
     public class PfpsAuthorizedAttribute : TypeFilterAttribute
     {
-        public PfpsAuthorizedAttribute(Flags flags = Flags.NONE) : base(typeof(PfpsAuthorizationFilter))
+        public PfpsAuthorizedAttribute(UserFlags flags = UserFlags.None) : base(typeof(PfpsAuthorizationFilter))
         {
             _flags = flags;
             Arguments = new object[] { flags };
         }
 
-        private readonly Flags _flags;
+        private readonly UserFlags _flags;
     }
 
     public class PfpsAuthorizationFilter : IAsyncActionFilter
     {
-        private Flags _flags;
+        private UserFlags _flags;
         private PfpsContext _ctx;
 
-        public PfpsAuthorizationFilter(Flags flags, PfpsContext ctx)
+        public PfpsAuthorizationFilter(UserFlags flags, PfpsContext ctx)
         {
             _ctx = ctx;
             _flags = flags;
@@ -58,7 +58,7 @@ namespace Pfps.Filters
             context.Result = new UnauthorizedResult();
         }
 
-        private bool ValidateHasFlag(Flags flags, User user)
+        private bool ValidateHasFlag(UserFlags flags, User user)
         {
             if (user.Flags.HasFlag(flags))
             {
@@ -66,7 +66,7 @@ namespace Pfps.Filters
             }
 
             // Always return true if user has administrator flag as administrators have access to every endpoint
-            if (user.Flags.HasFlag(Flags.ADMINISTRATOR))
+            if (user.Flags.HasFlag(UserFlags.Administrator))
             {
                 return true;
             }

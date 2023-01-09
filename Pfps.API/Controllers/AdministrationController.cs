@@ -21,7 +21,7 @@ namespace Pfps.API.Controllers
         }
 
         [HttpGet("/api/v1/admin/uploads/unapproved")]
-        [PfpsAuthorized(Flags.CONTENT_MODERATOR)]
+        [PfpsAuthorized(UserFlags.ContentModerator)]
         public async Task<IActionResult> GetUnapprovedUploadsAsync([FromQuery] int page = 0, [FromQuery] int limit = 10)
         {
             var uploads = await _ctx.Uploads
@@ -37,8 +37,8 @@ namespace Pfps.API.Controllers
         }
 
         [HttpPost("/api/v1/uploads/{id}/disapprove")]
-        [PfpsAuthorized(Flags.ADMINISTRATOR)]
-        public async Task<IActionResult> DisapproveUploadAsync(Guid id, [FromQuery] string? reason)
+        [PfpsAuthorized(UserFlags.Administrator)]
+        public async Task<IActionResult> DisapproveUploadAsync(Guid id, [FromQuery] string reason)
         {
             var upload = await _ctx.Uploads
                 .Include(x => x.Uploader)
@@ -67,7 +67,7 @@ namespace Pfps.API.Controllers
         }
 
         [HttpPost("/api/v1/uploads/{id}/approve")]
-        [PfpsAuthorized(Flags.CONTENT_MODERATOR)]
+        [PfpsAuthorized(UserFlags.ContentModerator)]
         public async Task<IActionResult> ApproveUploadAsync(Guid id)
         {
             var upload = await _ctx.Uploads
@@ -98,8 +98,8 @@ namespace Pfps.API.Controllers
         }
 
         [HttpDelete("/api/v1/uploads/{id}")]
-        [PfpsAuthorized(Flags.CONTENT_MODERATOR)]
-        public async Task<IActionResult> DeleteUploadAsync(Guid id, [FromQuery] string? reason)
+        [PfpsAuthorized(UserFlags.ContentModerator)]
+        public async Task<IActionResult> DeleteUploadAsync(Guid id, [FromQuery] string reason)
         {
             var upload = await _ctx.Uploads
                 .Include(x => x.Uploader)

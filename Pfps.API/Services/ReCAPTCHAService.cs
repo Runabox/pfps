@@ -27,19 +27,12 @@ namespace Pfps.API.Services
         public async Task<bool> VerifyReCAPTCHAResponse(string key)
         {
             if (_options.ReCaptchaSecret == null)
-            {
                 return true;
-            }
 
             var res = await _http.PostAsync($"/recaptcha/api/siteverify?secret={_options.ReCaptchaSecret}&response={key}", null);
             var result = await res.Content.ReadFromJsonAsync<ReCAPTCHAVerifyResponse>();
 
-            if (result.Success)
-            {
-                return true;
-            }
-
-            return false;
+            return result.Success;
         }
     }
 

@@ -7,15 +7,15 @@ namespace Pfps.API.Models
         public Guid Id { get; set; }
         public string Username { get; set; }
         public string Email { get; set; }
-        public Guid Avatar { get; set; }
-        public Flags Flags { get; set; }
+        public Guid? Avatar { get; set; }
+        public UserFlags Flags { get; set; }
         public DateTime Timestamp { get; set; }
         public bool DiscordUser { get; set; }
-        public string? DiscordId { get; set; }
+        public string DiscordId { get; set; }
 
         public static UserViewModel From(User user)
         {
-            if (user.DiscordUser == true)
+            if (user.HasLinkedDiscord == true)
             {
                 return new UserViewModel
                 {
@@ -26,7 +26,7 @@ namespace Pfps.API.Models
                     Avatar = user.Avatar,
                     Flags = user.Flags,
                     Timestamp = user.Timestamp,
-                    DiscordUser = user.DiscordUser,
+                    DiscordUser = user.HasLinkedDiscord,
                 };
             }
 
@@ -38,7 +38,7 @@ namespace Pfps.API.Models
                 Avatar = user.Avatar,
                 Flags = user.Flags,
                 Timestamp = user.Timestamp,
-                DiscordUser = user.DiscordUser,
+                DiscordUser = user.HasLinkedDiscord,
             };
         }
     }
@@ -48,8 +48,8 @@ namespace Pfps.API.Models
         public Guid Id { get; set; }
 
         public string Username { get; set; }
-        public Guid Avatar { get; set; }
-        public Flags Flags { get; set; }
+        public Guid? Avatar { get; set; }
+        public UserFlags Flags { get; set; }
         public DateTime Timestamp { get; set; }
 
         public static PublicUserViewModel From(User user)
