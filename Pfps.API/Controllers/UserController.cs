@@ -1,3 +1,5 @@
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,27 +13,27 @@ namespace Pfps.API.Controllers
     public class UserController : PfpsControllerBase
     {
         private readonly PfpsContext _ctx;
-        private readonly ILogger<UserController> _log;
         private readonly IPasswordHasher<User> _hash;
-        private readonly IDiscordOAuth2Service _discord;
+        private readonly IDiscordService _discord;
+        private readonly IMapper _mapper;
 
-        public UserController(PfpsContext ctx, ILogger<UserController> log, IPasswordHasher<User> hash, IDiscordOAuth2Service discord)
+        public UserController(PfpsContext ctx, IMapper mapper, IPasswordHasher<User> hash, IDiscordService discord)
         {
             _ctx = ctx;
-            _log = log;
             _hash = hash;
             _discord = discord;
+            _mapper = mapper; ;
         }
 
         // TODO: Verify ReCAPTCHA in production
-        /*
-            Register new user with username, password, and email.
 
-            ReCAPTCHA response is required.
-        */
-        [HttpPost("/api/v1/register")]
+        /// <summary>
+        /// Creates a new user using email, username, and password.
+        /// </summary>
+        /// <param name="model">The details for the new user to be created</param>
         [ReCaptchaValidation]
-        public async Task<IActionResult> RegisterUserAsync([FromBody] ApiUserModel model)
+        [HttpPost("/api/v1/register")]
+        public async Task<IActionResult> RegisterUserAsync([FromBody] RegisterModel model)
         {
             if (!ModelState.IsValid)
                 return ValidationProblem(ModelState);
@@ -39,95 +41,57 @@ namespace Pfps.API.Controllers
             // Validate that user with same username or email does not exist
             if (await _ctx.Users.AnyAsync(x => x.Username == model.Username)
                 || await _ctx.Users.AnyAsync(x => x.Email == model.Email))
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "A user with that username or email already exists!",
-                });
-            }
-
+                return Error("A user with that username or email already exists!");
+            
             // Create user object
             var user = new User()
             {
-                Username = model.Username,
                 Email = model.Email,
+                Username = model.Username
             };
 
             user.Password = _hash.HashPassword(user, model.Password);
-
             await _ctx.Users.AddAsync(user);
             await _ctx.SaveChangesAsync();
 
-            return Ok(UserViewModel.From(user));
+            return Ok(_mapper.Map<UserViewModel>(user));
         }
 
-        /*
-            Login and retreive token of regular account with username and password
-        */
-        [HttpPost("/api/v1/login")]
+
+        /// <summary>
+        /// Authenticates a user via their username and password.
+        /// </summary>
+        /// <param name="model">The user login details</param>
         [ReCaptchaValidation]
-        public async Task<IActionResult> LoginUserAsync([FromBody] ApiUserModel model)
+        [HttpPost("/api/v1/login")]
+        public async Task<IActionResult> LoginUserAsync([FromBody] RegisterModel model)
         {
             var user = await _ctx.Users.FirstOrDefaultAsync(x => x.Email == model.Email);
             if (user != null && user.HasLinkedDiscord == true)
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Requested user has created an account with Discord. Please login using Discord.",
-                });
-            }
+                return Error("Requested user has created an account with Discord. Please login using Discord.");
 
             if (user != null && _hash.VerifyHashedPassword(user, user.Password, model.Password) == PasswordVerificationResult.Success)
-            {
-                return Ok(new
-                {
-                    token = user.Token,
-                });
-            }
+                return Ok(new { user.Token });
 
-            return Unauthorized(new
-            {
-                code = 401,
-                error = "Username or password is incorrect. Please try again.",
-            });
+            return Error("Username or password is incorrect. Please try again.", 401);
         }
 
-        /*
-            Login to discord (if account is already created with discord account it will return token and not create new account)
-        */
+        /// <summary>
+        /// Logins the user via Discord; if an account doesn't exist, one will be created for them.
+        /// </summary>
+        /// <param name="code">The Discord OAuth2 response code</param>
+        /// <returns>A token for the user that's been logged in and/or registered.</returns>
         [HttpGet("/api/v1/discord/login")]
         public async Task<IActionResult> DiscordLoginAsync([FromQuery] string code)
         {
-            var oauth2TokenResult = await _discord.OAuth2TokenRequestAsync(code);
-            if (oauth2TokenResult.Access_Token == null)
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Invalid OAuth2 Code or Discord API Error",
-                });
-            }
+            var tokenResult = await _discord.GetAccessToken(code);
+            if (tokenResult == null) // now it does
+                return Error("Invalid OAuth2 Code or Discord API Error");
 
-            var discordUser = await _discord.GetDiscordUserAsync(oauth2TokenResult.Access_Token);
-            if (discordUser.Id == null)
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Error retrieving Discord User",
-                });
-            }
-
-            if (await _ctx.Users.AnyAsync(x => x.Password == discordUser.Id && x.HasLinkedDiscord == true))
-            {
-                var usr = await _ctx.Users.FirstOrDefaultAsync(x => x.Password == discordUser.Id && x.HasLinkedDiscord == true);
-                return Ok(new
-                {
-                    token = usr.Token,
-                });
-            }
+            var discordUser = await _discord.GetDiscordUserAsync(tokenResult.Token);
+            var usr = await _ctx.Users.FirstOrDefaultAsync(x => x.Password == discordUser.Id && x.HasLinkedDiscord == true);
+            if (usr != null)
+                return Ok(new { usr.Token });
 
             var user = new User()
             {
@@ -140,84 +104,67 @@ namespace Pfps.API.Controllers
             await _ctx.Users.AddAsync(user);
             await _ctx.SaveChangesAsync();
 
-            return Ok(new
-            {
-                token = user.Token,
-            });
+            return Ok(new { user.Token });
         }
 
-        /*
-            Get Current User Object with Authorization
-        */
+        /// <summary>
+        /// Requests the current user's profile.
+        /// </summary>
+        /// <returns>A UserViewModel object representing the currently authenticated user</returns>
+        [PfpsAuthorized]
         [HttpGet("/api/v1/users/@me")]
-        [PfpsAuthorized]
-        public IActionResult GetSelf()
-        {
-            return Ok(UserViewModel.From(base.PfpsUser));
-        }
+        public IActionResult GetCurrentUser() =>
+            Ok(_mapper.Map<UserViewModel>(base.PfpsUser));
 
+        /// <summary>
+        /// Requests the current user's active notifications
+        /// </summary>
+        [PfpsAuthorized]
         [HttpGet("/api/v1/users/@me/notifications")]
-        [PfpsAuthorized]
-        public async Task<IActionResult> GetNotificationsAsync([FromQuery] int limit = 10, [FromQuery] int page = 0)
+        public async Task<IActionResult> GetNotificationsAsync()
         {
-            var userId = base.PfpsUser.Id;
-
-            var user = await _ctx.Users
-                .AsNoTracking()
-                .Where(x => x.Id == userId)
-                .Include(x => x.Notifications)
-                .Skip(page * limit)
-                .Take(10)
-                .FirstOrDefaultAsync();
-
-            var notifications = user.Notifications
-                .Select(x => NotificationViewModel.From(x));
+            var notifications = await _ctx.Notifications
+                .Where(x => x.User.Id == PfpsUser.Id)
+                .ProjectTo<NotificationViewModel>(_mapper.ConfigurationProvider)
+                .ToListAsync();
 
             return Ok(notifications);
         }
 
-        [HttpGet("/api/v1/users/@me/favorites")]
+        /// <summary>
+        /// Requests the current user's favorited avatars
+        /// </summary>
         [PfpsAuthorized]
-        public async Task<IActionResult> GetFavoritesAsync([FromQuery] int limit = 10, [FromQuery] int page = 0)
+        [HttpGet("/api/v1/users/@me/favorites")]
+        public async Task<IActionResult> GetFavoritesAsync()
         {
-            var userId = base.PfpsUser.Id;
-
             var favorites = await _ctx.Favorites
-                .Where(x => x.UserId == userId)
-                .Skip(page * limit)
-                .Take(10)
+                .Where(x => x.UserId == PfpsUser.Id)
                 .Include(x => x.Upload)
-                .Select(x => UploadSimplifiedViewModel.From(x.Upload))
+                .Select(x => x.Upload)
+                .ProjectTo<UploadViewModel>(_mapper.ConfigurationProvider)
                 .ToListAsync();
 
             return Ok(favorites);
         }
 
-        [HttpDelete("/api/v1/notifications/{id}")]
+        /// <summary>
+        /// Dismisses a notification from the user's notification queue.
+        /// </summary>
+        /// <param name="id">The notification ID to delete</param>
         [PfpsAuthorized]
+        [HttpDelete("/api/v1/notifications/{id}")]
         public async Task<IActionResult> DismissNotificationAsync(Guid id)
         {
-            var notification = await _ctx.Notifications.FirstOrDefaultAsync(x => x.Id == id);
+            var notification = await _ctx.Notifications.FindAsync(id);
 
             if (notification == null)
-            {
                 return NotFound();
-            }
+
+            if (notification.User.Id != PfpsUser.Id)
+                return Error("This notification isn't yours!");
 
             _ctx.Notifications.Remove(notification);
-            await _ctx.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        /*
-            Disable when database is set up.
-        */
-        [HttpGet("/api/v1/users/@me/admin")]
-        [PfpsAuthorized]
-        public async Task<IActionResult> GiveSelfAdminAsync()
-        {
-            base.PfpsUser.Flags = UserFlags.Administrator;
             await _ctx.SaveChangesAsync();
 
             return NoContent();

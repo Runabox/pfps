@@ -8,7 +8,6 @@ namespace Pfps.API.Services
     public interface IFileService
     {
         Task<bool> UploadFileAsync(IFormFile file, Guid id, string extension);
-        Task<S3FileResponse> GetFileByKeyAsync(string bucketName, string key);
     }
 
     public class FileService : IFileService
@@ -31,40 +30,23 @@ namespace Pfps.API.Services
                 var request = new PutObjectRequest()
                 {
                     BucketName = _options.S3Bucket,
-                    Key = $"uploads/{id.ToString()}.{extension}",
+                    Key = $"uploads/{id}.{extension}",
                     InputStream = file.OpenReadStream(),
-                    CannedACL = S3CannedACL.PublicRead,
+                    CannedACL = S3CannedACL.PublicRead
                 };
 
                 request.Metadata.Add("Content-Type", file.ContentType);
                 await _s3.PutObjectAsync(request);
 
-                _log.LogInformation("Uploaded S3 Object with ID {objectId} and Extension {extension}", id, extension);
-                return true;
+                _log.LogInformation("Uploaded S3 Object with ID {id} and extension {extension}", id, extension);
             }
-            catch (Exception e)
+            catch (Exception exception)
             {
-                _log.LogError("S3 Error - {exceptionObject}", e);
+                _log.LogError("S3 Error - {exception}", exception);
                 return false;
             }
-        }
 
-        public async Task<S3FileResponse> GetFileByKeyAsync(string bucketName, string key)
-        {
-            var s3Object = await _s3.GetObjectAsync(bucketName, key);
-
-            return new S3FileResponse()
-            {
-                ResponseStream = s3Object.ResponseStream,
-                ContentType = s3Object.Headers.ContentType
-            };
+            return true;
         }
     }
-
-    public class S3FileResponse
-    {
-        public Stream ResponseStream { get; set; }
-        public string ContentType { get; set; }
-    }
-
 }

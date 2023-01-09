@@ -10,13 +10,8 @@ namespace Pfps.API.Services
     public class AuditLogger : IAuditLogger
     {
         private readonly PfpsContext _ctx;
-        private readonly ILogger<AuditLogger> _log;
 
-        public AuditLogger(PfpsContext ctx, ILogger<AuditLogger> log)
-        {
-            _ctx = ctx;
-            _log = log;
-        }
+        public AuditLogger(PfpsContext ctx) => _ctx = ctx;
 
         public async Task LogEventAsync(string message, AuditEvent type, User user)
         {
@@ -28,7 +23,6 @@ namespace Pfps.API.Services
             };
 
             await _ctx.Audits.AddAsync(audit);
-            await _ctx.SaveChangesAsync();
         }
     }
 }
