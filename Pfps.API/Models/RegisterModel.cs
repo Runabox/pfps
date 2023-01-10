@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Pfps.API.Models
 {
-    public class ApiUserModel
+    public class RegisterModel
     {
         [MinLength(3)]
         [MaxLength(16)]

@@ -1,69 +1,41 @@
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Pfps.API.Data;
 using Pfps.API.Models;
 using Pfps.API.Services;
 using Pfps.Filters;
+using System.ComponentModel.DataAnnotations;
+using X.PagedList;
 
 namespace Pfps.API.Controllers
 {
     public class AdministrationController : PfpsControllerBase
     {
         private readonly PfpsContext _ctx;
-        private readonly ILogger<AdministrationController> _log;
         private readonly IAuditLogger _audit;
+        private readonly IMapper _mapper;
 
-        public AdministrationController(PfpsContext ctx, ILogger<AdministrationController> log, IAuditLogger audit)
+        public AdministrationController(PfpsContext ctx, IMapper mapper, IAuditLogger audit)
         {
             _ctx = ctx;
-            _log = log;
             _audit = audit;
+            _mapper = mapper;
         }
 
         [HttpGet("/api/v1/admin/uploads/unapproved")]
         [PfpsAuthorized(UserFlags.ContentModerator)]
-        public async Task<IActionResult> GetUnapprovedUploadsAsync([FromQuery] int page = 0, [FromQuery] int limit = 10)
+        public async Task<IActionResult> GetUnapprovedUploadsAsync([FromQuery] [Range(0, int.MaxValue)] int page = 0, [FromQuery] [Range(5, 100)] int limit = 10)
         {
             var uploads = await _ctx.Uploads
                 .Where(x => x.IsApproved == false)
                 .Include(x => x.Uploader)
                 .OrderByDescending(x => x.Timestamp)
-                .Skip(page * limit)
-                .Take(limit)
-                .Select(x => UploadSimplifiedViewModel.From(x))
-                .ToListAsync();
+                .ProjectTo<UploadViewModel>(_mapper.ConfigurationProvider)
+                .ToPagedListAsync(page, limit);
 
             return Ok(uploads);
-        }
-
-        [HttpPost("/api/v1/uploads/{id}/disapprove")]
-        [PfpsAuthorized(UserFlags.Administrator)]
-        public async Task<IActionResult> DisapproveUploadAsync(Guid id, [FromQuery] string reason)
-        {
-            var upload = await _ctx.Uploads
-                .Include(x => x.Uploader)
-                .FirstOrDefaultAsync(x => x.Id == id);
-            if (upload == null)
-                return NotFound();
-
-            upload.IsApproved = false;
-
-            // Create notification
-            var notification = new Notification()
-            {
-                Type = NotificationType.DISAPPROVAL,
-                User = upload.Uploader,
-                Moderator = base.PfpsUser.Username,
-                ModeratorId = base.PfpsUser.Id,
-                UploadTitle = upload.Title,
-                UploadId = upload.Id,
-                Message = (reason == null ? "No reason provided." : reason)
-            };
-
-            await _ctx.Notifications.AddAsync(notification); await _ctx.SaveChangesAsync();
-
-            await _audit.LogEventAsync($"Disapproved Upload ID {id}", AuditEvent.UPLOAD_DISAPPROVAL, base.PfpsUser);
-            return Ok(UploadSimplifiedViewModel.From(upload));
         }
 
         [HttpPost("/api/v1/uploads/{id}/approve")]
@@ -77,12 +49,10 @@ namespace Pfps.API.Controllers
             if (upload == null)
                 return NotFound();
 
-            upload.IsApproved = true;
-
             // Create notification
             var notification = new Notification()
             {
-                Type = NotificationType.APPROVAL,
+                Type = NotificationType.Approval,
                 User = upload.Uploader,
                 Moderator = base.PfpsUser.Username,
                 ModeratorId = base.PfpsUser.Id,
@@ -90,16 +60,17 @@ namespace Pfps.API.Controllers
                 UploadId = upload.Id,
             };
 
+            upload.IsApproved = true;
             await _ctx.Notifications.AddAsync(notification);
+            await _audit.LogEventAsync($"Approved Upload ID {id}", AuditEvent.UploadApproval, base.PfpsUser);
             await _ctx.SaveChangesAsync();
 
-            await _audit.LogEventAsync($"Approved Upload ID {id}", AuditEvent.UPLOAD_APPROVAL, base.PfpsUser);
-            return Ok(UploadSimplifiedViewModel.From(upload));
+            return NoContent(); // no reason to send the upload data back here.
         }
 
         [HttpDelete("/api/v1/uploads/{id}")]
         [PfpsAuthorized(UserFlags.ContentModerator)]
-        public async Task<IActionResult> DeleteUploadAsync(Guid id, [FromQuery] string reason)
+        public async Task<IActionResult> DeleteUploadAsync(Guid id, [FromQuery] string reason = "No reason provided.")
         {
             var upload = await _ctx.Uploads
                 .Include(x => x.Uploader)
@@ -108,32 +79,23 @@ namespace Pfps.API.Controllers
             if (upload == null)
                 return NotFound();
 
-            if (upload.Uploader.Favorites.Any(x => x.Upload == upload))
-            {
-                _ctx.Favorites.Remove(upload.Uploader.Favorites.FirstOrDefault(x => x.Upload == upload));
-                _ctx.Uploads.Remove(upload);
-            }
-            else
-            {
-                _ctx.Uploads.Remove(upload);
-            }
-
             // Create notification
             var notification = new Notification()
             {
-                Type = NotificationType.DELETION,
+                Type = NotificationType.Deletion,
                 User = upload.Uploader,
                 Moderator = base.PfpsUser.Username,
                 ModeratorId = base.PfpsUser.Id,
                 UploadTitle = upload.Title,
                 UploadId = upload.Id,
-                Message = (reason == null ? "No reason provided." : reason)
+                Message = reason
             };
 
-            await _ctx.Notifications.AddAsync(notification); await _ctx.SaveChangesAsync();
+            _ctx.Uploads.Remove(upload);
+            await _ctx.Notifications.AddAsync(notification);
+            await _audit.LogEventAsync($"Deleted Upload ID {id}", AuditEvent.UploadDeletion, base.PfpsUser);
             await _ctx.SaveChangesAsync();
 
-            await _audit.LogEventAsync($"Deleted Upload ID {id}", AuditEvent.UPLOAD_DELETION, base.PfpsUser);
             return NoContent();
         }
     }

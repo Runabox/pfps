@@ -25,7 +25,7 @@ namespace Pfps.API.Data
         public Guid? Avatar { get; set; }
 
         public UserFlags Flags { get; set; } = UserFlags.None;
-        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
 
         public static string CreateToken()
         {

@@ -1,10 +1,13 @@
-using System.Collections.ObjectModel;
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Pfps.API.Data;
 using Pfps.API.Models;
 using Pfps.API.Services;
 using Pfps.Filters;
+using System.ComponentModel.DataAnnotations;
+using X.PagedList;
 
 namespace Pfps.API.Controllers
 {
@@ -13,351 +16,145 @@ namespace Pfps.API.Controllers
         private readonly PfpsContext _ctx;
         private readonly ILogger<UploadController> _log;
         private readonly IFileService _file;
+        private readonly IMapper _mapper;
 
-        public UploadController(PfpsContext ctx, ILogger<UploadController> log, IFileService file)
+        public UploadController(PfpsContext ctx, IMapper mapper, ILogger<UploadController> log, IFileService file)
         {
             _ctx = ctx;
             _log = log;
             _file = file;
+            _mapper = mapper;
         }
 
         [HttpGet("/api/v1/uploads/orderby")]
-        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] OrderType type, [FromQuery] UploadType uploadType, [FromQuery] int page = 0, [FromQuery] int limit = 20)
+        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] OrderType type, [FromQuery] UploadType uploadType, [FromQuery] [Range(0, int.MaxValue)] int page = 0, [FromQuery] [Range(5, 100)] int limit = 20)
         {
             var query = _ctx.ApprovedUploads
                 .Where(x => x.Type == uploadType)
                 .Include(x => x.Uploader)
                 .OrderByDescending(x => x.Timestamp);
 
-            if (type == OrderType.POPULAR)
+            if (type == OrderType.Popular)
                 query = query.OrderByDescending(x => x.Views);
 
             var uploads = await query
-                .Skip(page * limit)
-                .Take(limit)
-                .Select(x => UploadSimplifiedViewModel.From(x))
-                .ToListAsync();
+                .ProjectTo<UploadViewModel>(_mapper.ConfigurationProvider)
+                .ToPagedListAsync(page, limit);
 
             return Ok(uploads);
         }
 
 
-        [HttpPost("/api/v1/upload")]
-        [ReCaptchaValidation]
         [PfpsAuthorized]
-        public async Task<IActionResult> CreateUploadAsync([FromForm] int type, [FromForm] string tags, [FromForm] string title,
-            [FromForm] string description, [FromForm] IFormFileCollection upload)
+        [ReCaptchaValidation]
+        [HttpPost("/api/v1/upload")]
+        public async Task<IActionResult> CreateUploadAsync([FromForm] UploadRequest request)
         {
-            if (title.Length > 48)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Title cannot be over 48 characters."
-                });
+            if (request.Tags?.Any(x => x.Length > 25) == true)
+                ModelState.AddModelError("Tags", "Tag length cannot exceed 25 characters.");
 
-            if (description != null && description.Length > 128)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Description cannot be over 128 characters."
-                });
+            if (request.Type == UploadType.Multiple)
+                ModelState.AddModelError("Type", "Multiple profile pictures are not yet supported.");
 
-            if (upload.ToArray().Length <= 0)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "No files provided.",
-                });
+            if ((request.Type == UploadType.Single || request.Type == UploadType.Banner) && request.Uploads?.Count != 1)
+                ModelState.AddModelError("Uploads", "Expected only one upload for this upload type.");
 
-            if (type >= 3)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Invalid Upload Type"
-                });
+            if (request.Type == UploadType.Matching && request.Uploads?.Count != 2)
+                ModelState.AddModelError("Uploads", "Expected two uploads for this upload type.");
 
-            if (upload.ToArray().Length == 2 && ((UploadType)type == UploadType.PFP_SINGLE || (UploadType)type == UploadType.PFP_MULTIPLE))
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_MATCHING)",
-                });
-            else if (upload.ToArray().Length == 1 && ((UploadType)type == UploadType.PFP_MULTIPLE || (UploadType)type == UploadType.PFP_MATCHING))
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_SINGLE)",
-                });
-            else if (upload.ToArray().Length > 2 && ((UploadType)type == UploadType.PFP_SINGLE || (UploadType)type == UploadType.PFP_MATCHING))
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = $"Incorrect upload type (provided {ParseUploadTypeInt((UploadType)type)}, expected PFP_MULTIPLE)",
-                });
-            else if (upload.ToArray().Length > 8)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = $"You can only upload 8 profile pictures per post! (provided {upload.ToArray().Length})",
-                });
+            foreach (var file in request.Uploads)
+                if (!IsValidFile(file))
+                    ModelState.AddModelError("Uploads", $"File {file.FileName} is invalid and/or prohibited.");
 
-            if ((UploadType)type == UploadType.PFP_MULTIPLE)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "PFP_MULTIPLE is not supported yet.",
-                });
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
 
-            if (title == null)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Malformed request body",
-                });
-
-            // create tags
-            string[] tagStringArray = tags.Split(',');
-            if (tagStringArray.Length > 8)
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Maximum limit for tags exceeded",
-                });
-
-            List<Tag> tagObjects = new List<Tag>();
-            foreach (string tagTitle in tagStringArray)
+            List<Tag> tags = new();
+            foreach (var tag in request.Tags)
             {
-                if (tagTitle.Length > 25)
-                {
-                    return BadRequest(new
-                    {
-                        code = 400,
-                        error = "Tag length cannot be over 25",
-                    });
-                }
+                var t = await _ctx.Tags.FindAsync(tag);
+                if (t == null)
+                    await _ctx.Tags.AddAsync(t = new Tag(tag));
 
-                if (await _ctx.Tags.AnyAsync(x => x.Title == tagTitle))
-                {
-                    tagObjects.Add(await _ctx.Tags.FirstOrDefaultAsync(x => x.Title == tagTitle));
-                    continue;
-                }
-
-                var tag = new Tag()
-                {
-                    Title = tagTitle,
-                };
-
-                await _ctx.Tags.AddAsync(tag);
-                tagObjects.Add(tag);
+                tags.Add(t);
             }
 
-            ICollection<IFormFile> badFiles = new Collection<IFormFile>();
-            foreach (var file in upload)
-                if (!ValidateDisposition(ParseFileExtension(file)))
-                    badFiles.Add(file);
-
-            if (badFiles.ToArray().Length >= 1)
-            {
-                ICollection<FileDispositionErrorObject> objs = new Collection<FileDispositionErrorObject>();
-                foreach (var file in badFiles)
-                {
-                    var disposition = ParseFileExtension(file);
-
-                    objs.Add(new FileDispositionErrorObject()
-                    {
-                        Name = file.FileName,
-                        Disposition = disposition,
-                    });
-                }
-
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = new
-                    {
-                        message = "One or more files does not have a valid disposition.",
-                        files = objs,
-                    },
-                });
-            }
-
-            List<string> urlObjects = new List<string>();
-            foreach (var file in upload)
+            List<string> urls = new();
+            foreach (var file in request.Uploads)
             {
                 var fileId = Guid.NewGuid();
-                var fileExtension = ParseFileExtension(file);
-                // upload to S3
+                var fileExtension = Path.GetExtension(file.FileName);
                 var uploadFileResponse = await _file.UploadFileAsync(file, fileId, fileExtension);
                 if (uploadFileResponse != true)
-                {
-                    return BadRequest(new
-                    {
-                        code = 400,
-                        error = "Internal server error - failed to upload file to S3",
-                    });
-                }
+                    return Error("Internal server error - failed to upload file to S3", 500);
 
-                var url = $"https://cdn.pfps.lol/uploads/{fileId}.{fileExtension}";
-                urlObjects.Add(url);
+                urls.Add($"https://cdn.pfps.lol/uploads/{fileId}.{fileExtension}");
             }
 
             var upld = new Upload()
             {
-                Title = title,
-                Description = description,
-                TagIds = tagObjects.Select(x => x.Id).ToArray(),
-                Tags = tagObjects.Select(x => x.Title).ToArray(),
-                Urls = urlObjects.ToArray(),
-                Type = (UploadType)type,
-                Uploader = base.PfpsUser,
+                Title = request.Title,
+                Description = request.Description,
+                Tags = tags.Select(x => x.Name).ToArray(),
+                Urls = urls.ToArray(),
+                Type = request.Type,
+                Uploader = base.PfpsUser
             };
 
             await _ctx.Uploads.AddAsync(upld);
             await _ctx.SaveChangesAsync();
 
-            var uploadViewModel = UploadViewModel.From(upld);
-            _log.LogInformation("User {user} uploaded new post {upload}", UserViewModel.From(base.PfpsUser), uploadViewModel);
-
-            return Ok(uploadViewModel);
+            _log.LogInformation("User {user} uploaded new post {upload}", base.PfpsUser.Id, upld.Id);
+            return Ok(_mapper.Map<UploadViewModel>(upld));
         }
 
-        [HttpGet("/api/v1/uploads/{idNonParsed}")]
-        public async Task<IActionResult> GetUploadAsync(string idNonParsed)
+        [HttpGet("/api/v1/uploads/{id}")]
+        public async Task<IActionResult> GetUploadAsync(Guid id)
         {
-            if (!Guid.TryParse(idNonParsed, out Guid id))
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Invalid Upload Id",
-                });
-            }
-
             var upload = await _ctx.Uploads
                 .Include(x => x.Uploader)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (upload == null)
-                return NotFound(new
-                {
-                    code = 404,
-                    error = "The requested upload was not found.",
-                });
+                return NotFound();
 
             upload.Views++;
-            await _ctx.SaveChangesAsync();
+            _ = _ctx.SaveChangesAsync().ConfigureAwait(false); // this may throw an ObjectDisposedException
 
-            return Ok(UploadViewModel.From(upload));
+            return Ok(_mapper.Map<UploadViewModel>(upload));
         }
 
-        [HttpPost("/api/v1/uploads/{idNonParsed}/favorite")]
         [PfpsAuthorized]
-        public async Task<IActionResult> FavoriteUploadAsync(string idNonParsed)
+        [HttpPost("/api/v1/uploads/{id}/favorite")]
+        public async Task<IActionResult> FavoriteUploadAsync(Guid id)
         {
-            if (!Guid.TryParse(idNonParsed, out Guid id))
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Invalid Upload Id",
-                });
-            }
-
             var upload = await _ctx.Uploads.FirstOrDefaultAsync(x => x.Id == id);
             if (upload == null)
-                return NotFound(new
-                {
-                    code = 404,
-                    error = "The requested upload was not found.",
-                });
+                return NotFound();
 
-            if (!base.PfpsUser.Favorites.Any(x => x.Upload == upload))
+            if (base.PfpsUser.Favorites.Any(x => x.Upload == upload))
+                return Error("Post already in favorites.");
+            
+            var favorite = new Favorite()
             {
-                var favorite = new Favorite()
-                {
-                    UserId = base.PfpsUser.Id,
-                    Upload = upload,
-                };
+                UserId = base.PfpsUser.Id,
+                Upload = upload,
+            };
 
-                await _ctx.AddAsync(favorite);
-                base.PfpsUser.Favorites.Add(favorite);
-
-                await _ctx.SaveChangesAsync();
-            }
-            else
-            {
-                return BadRequest(new
-                {
-                    code = 400,
-                    error = "Post already in favorites.",
-                });
-            }
-
+            base.PfpsUser.Favorites.Add(favorite);
+            await _ctx.SaveChangesAsync();
             return NoContent();
         }
 
         [NonAction]
-        public string ParseUploadTypeInt(UploadType type)
+        public bool IsValidFile(IFormFile file)
         {
-            switch (type)
+            // this is cringe
+            return file.ContentType switch
             {
-                case UploadType.PFP_SINGLE:
-                    return "PFP_SINGLE";
-                case UploadType.PFP_MATCHING:
-                    return "PFP_MATCHING";
-                case UploadType.PFP_MULTIPLE:
-                    return "PFP_MULTIPLE";
-                case UploadType.BANNER:
-                    return "BANNER";
-                default:
-                    return $"UNKNOWN_UPLOAD_TYPE ({(int)type})";
-            }
+                "image/jpeg" or "image/jpg" or "image/png" or "image/webp" or "image/gif" => true,
+                _ => false,
+            };
         }
-
-        [NonAction]
-        public string ParseOrderTypeInt(OrderType type)
-        {
-            switch (type)
-            {
-                case OrderType.DESCENDING:
-                    return "DESCENDING";
-                case OrderType.POPULAR:
-                    return "POPULAR";
-                default:
-                    return $"UNKNOWN_ORDER_TYPE ({(int)type})";
-            }
-        }
-
-        [NonAction]
-        public string ParseFileExtension(IFormFile file)
-        {
-            return file.FileName.Split(".").LastOrDefault();
-        }
-
-        [NonAction]
-        public bool ValidateDisposition(string disposition)
-        {
-            switch (disposition)
-            {
-                case "jpg":
-                    return true;
-                case "png":
-                    return true;
-                case "jpeg":
-                    return true;
-                case "webp":
-                    return true;
-                case "gif":
-                    return true;
-                default:
-                    return false;
-            }
-        }
-    }
-
-    public class FileDispositionErrorObject
-    {
-        public string Name { get; set; }
-        public string Disposition { get; set; }
     }
 }
