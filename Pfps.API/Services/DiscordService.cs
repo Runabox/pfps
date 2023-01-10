@@ -33,7 +33,7 @@ namespace Pfps.API.Services
                 { "client_secret", _options.DiscordClientSecret }
             };
 
-            var res = await _client.PostAsync("/oauth2/token", new FormUrlEncodedContent(body));
+            var res = await _client.PostAsync("oauth2/token", new FormUrlEncodedContent(body));
 
             if (!res.IsSuccessStatusCode)
                 return null;
@@ -44,7 +44,7 @@ namespace Pfps.API.Services
         public async Task<DiscordUser> GetDiscordUserAsync(string token)
         {
             _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            return await _client.GetFromJsonAsync<DiscordUser>("/users/@me");
+            return await _client.GetFromJsonAsync<DiscordUser>("users/@me");
         }
     }
 
