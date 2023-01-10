@@ -11,6 +11,7 @@ namespace Pfps.API
             // Use for more advanced class maps later on.
 
             CreateMap<Upload, UploadViewModel>();
+            CreateMap<User, PublicUserViewModel>();
             CreateMap<Notification, NotificationViewModel>();
 
             CreateMap<User, UserViewModel>()
