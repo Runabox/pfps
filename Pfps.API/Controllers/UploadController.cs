@@ -88,7 +88,7 @@ namespace Pfps.API.Controllers
                 if (uploadFileResponse != true)
                     return Error("Internal server error - failed to upload file to S3", 500);
 
-                urls.Add($"https://cdn.pfps.lol/uploads/{fileId}.{fileExtension}");
+                urls.Add($"https://cdn.pfps.one/uploads/{fileId}.{fileExtension}");
             }
 
             var upld = new Upload()
