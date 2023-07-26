@@ -23,9 +23,16 @@ namespace Pfps.API
             builder.Services.AddHttpClient("Discord", x => x.BaseAddress = new Uri("https://discord.com/api/v9/"));
             builder.Services.AddHttpClient("Google", x => x.BaseAddress = new Uri("https://google.com/"));
 
-            // AWS
-            builder.Services.AddAWSService<IAmazonS3>();
-            builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
+            // S3
+            var s3Section = builder.Configuration.GetSection("S3");
+            string ServiceURL = s3Section.GetValue<string>("ServiceURL");
+            string AccessKeyId = s3Section.GetValue<string>("AccessKeyId");
+            string AccessKeySecret = s3Section.GetValue<string>("AccessKeySecret");
+
+            var s3Config = new AmazonS3Config() { ServiceURL = ServiceURL };
+            var s3 = new AmazonS3Client(AccessKeyId, AccessKeySecret, s3Config);
+
+            builder.Services.AddSingleton<IAmazonS3>(s3);
             builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
             // Services
@@ -35,6 +42,7 @@ namespace Pfps.API
             builder.Services.AddScoped<IReCaptchaService, ReCaptchaService>();
 
             builder.Services.Configure<PfpsOptions>(builder.Configuration.GetSection("Defaults"));
+            builder.Services.Configure<S3Options>(builder.Configuration.GetSection("S3"));
 
             var app = builder.Build();
 
@@ -46,7 +54,7 @@ namespace Pfps.API
             }
 
             // Allow all CORS
-            app.UseCors(x => 
+            app.UseCors(x =>
                 x.AllowAnyMethod()
                 .AllowAnyHeader()
                 .SetIsOriginAllowed(origin => true) // allow any origin
