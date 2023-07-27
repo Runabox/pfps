@@ -27,7 +27,7 @@ namespace Pfps.API.Controllers
         }
 
         [HttpGet("/api/v1/uploads/orderby")]
-        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] OrderType type, [FromQuery] UploadType uploadType, [FromQuery] [Range(0, int.MaxValue)] int page = 0, [FromQuery] [Range(5, 100)] int limit = 20)
+        public async Task<IActionResult> GetUploadsOrderedAsync([FromQuery] OrderType type, [FromQuery] UploadType uploadType, [FromQuery][Range(0, int.MaxValue)] int page = 0, [FromQuery][Range(5, 100)] int limit = 20)
         {
             var query = _ctx.ApprovedUploads
                 .Where(x => x.Type == uploadType)
@@ -41,7 +41,12 @@ namespace Pfps.API.Controllers
                 .ProjectTo<UploadViewModel>(_mapper.ConfigurationProvider)
                 .ToPagedListAsync(page, limit);
 
-            return Ok(uploads);
+            return Ok(new
+            {
+                Pages = uploads.PageCount,
+                Page = uploads.PageNumber,
+                Result = uploads,
+            });
         }
 
 
@@ -134,7 +139,7 @@ namespace Pfps.API.Controllers
 
             if (base.PfpsUser.Favorites.Any(x => x.Upload == upload))
                 return Error("Post already in favorites.");
-            
+
             var favorite = new Favorite()
             {
                 UserId = base.PfpsUser.Id,
