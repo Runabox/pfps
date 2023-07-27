@@ -12,7 +12,7 @@ namespace Pfps.API.Models
         public bool IsApproved { get; set; }
         public string[] Urls { get; set; }
 
-        public DateTime Timestamp { get; set; }
+        public DateTimeOffset Timestamp { get; set; }
         public int Views { get; set; }
         public UploadType Type { get; set; }
     }
