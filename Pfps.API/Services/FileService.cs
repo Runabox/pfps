@@ -14,9 +14,9 @@ namespace Pfps.API.Services
     {
         private readonly IAmazonS3 _s3;
         private readonly ILogger<FileService> _log;
-        private readonly PfpsOptions _options;
+        private readonly S3Options _options;
 
-        public FileService(IAmazonS3 s3, ILogger<FileService> log, IOptions<PfpsOptions> options)
+        public FileService(IAmazonS3 s3, ILogger<FileService> log, IOptions<S3Options> options)
         {
             _s3 = s3;
             _log = log;
@@ -29,7 +29,7 @@ namespace Pfps.API.Services
             {
                 var request = new PutObjectRequest()
                 {
-                    BucketName = _options.S3Bucket,
+                    BucketName = _options.Bucket,
                     Key = $"uploads/{id}.{extension}",
                     InputStream = file.OpenReadStream(),
                     CannedACL = S3CannedACL.PublicRead
